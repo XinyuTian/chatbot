@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chat</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --sidebar: #111820;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9bb4;
+      --accent: #3b82f6;
+      --accent-dim: #2563eb;
+      --user-bg: #1e3a5f;
+      --assistant-bg: #1c2533;
+      --error: #f87171;
+      --sidebar-hover: rgba(255, 255, 255, 0.06);
+      --sidebar-active: rgba(59, 130, 246, 0.15);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .shell {
+      display: flex;
+      height: 100%;
+      width: 100%;
+      max-width: 100%;
+    }
+    .sidebar {
+      width: 260px;
+      min-width: 220px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--sidebar);
+      border-right: 1px solid var(--border);
+    }
+    .sidebar-top {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #new-chat {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-align: left;
+    }
+    #new-chat:hover {
+      background: var(--sidebar-hover);
+    }
+    #conversation-list {
+      list-style: none;
+      margin: 0;
+      padding: 0.5rem;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .conv-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.5rem 0.6rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.8125rem;
+      color: var(--text);
+      border: 1px solid transparent;
+    }
+    .conv-item:hover {
+      background: var(--sidebar-hover);
+    }
+    .conv-item.active {
+      background: var(--sidebar-active);
+      border-color: rgba(59, 130, 246, 0.35);
+    }
+    .conv-item .title {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .conv-item .del {
+      flex-shrink: 0;
+      opacity: 0;
+      padding: 0.2rem 0.35rem;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .conv-item:hover .del { opacity: 1; }
+    .conv-item .del:hover {
+      color: var(--error);
+      background: rgba(248, 113, 113, 0.12);
+    }
+    .app {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+    }
+    header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-shrink: 0;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    header span {
+      font-size: 0.8rem;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1rem 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .empty-hint {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 0.9rem;
+      padding: 2rem;
+      text-align: center;
+    }
+    .msg {
+      max-width: 100%;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      line-height: 1.55;
+      font-size: 0.95rem;
+    }
+    .msg.user {
+      align-self: flex-end;
+      background: var(--user-bg);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+    .msg.assistant {
+      align-self: stretch;
+      background: var(--assistant-bg);
+      border: 1px solid var(--border);
+    }
+    .msg.assistant .meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.5rem;
+    }
+    .msg.thinking {
+      align-self: stretch;
+      background: var(--assistant-bg);
+      border: 1px dashed var(--border);
+      color: var(--muted);
+    }
+    .thinking-inner {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .dots {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .dots span {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: bounce 1.2s ease-in-out infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.15s; }
+    .dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+      40% { transform: translateY(-6px); opacity: 1; }
+    }
+    .msg .md-content :first-child { margin-top: 0; }
+    .msg .md-content :last-child { margin-bottom: 0; }
+    .msg .md-content pre {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      overflow-x: auto;
+      font-size: 0.85rem;
+    }
+    .msg .md-content code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.88em;
+    }
+    .msg .md-content p code, .msg .md-content li code {
+      background: rgba(255,255,255,0.08);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+    .msg .md-content a { color: var(--accent); }
+    .msg.error { border-color: rgba(248, 113, 113, 0.5); color: var(--error); }
+    .composer {
+      padding: 0.75rem 1.25rem 1.25rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      background: linear-gradient(180deg, transparent, rgba(0,0,0,0.2));
+    }
+    .composer-inner {
+      display: flex;
+      gap: 0.5rem;
+      align-items: flex-end;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.5rem 0.65rem;
+    }
+    #input {
+      flex: 1;
+      min-height: 44px;
+      max-height: 200px;
+      resize: none;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      line-height: 1.45;
+      padding: 0.35rem 0.5rem;
+      outline: none;
+    }
+    #input::placeholder { color: var(--muted); opacity: 0.8; }
+    #send {
+      flex-shrink: 0;
+      height: 40px;
+      padding: 0 1rem;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+    #send:hover:not(:disabled) { background: var(--accent-dim); }
+    #send:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    @media (max-width: 640px) {
+      .sidebar { width: 200px; min-width: 180px; }
+      header span { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" aria-label="对话列表">
+      <div class="sidebar-top">
+        <button type="button" id="new-chat">＋ 新对话</button>
+      </div>
+      <ul id="conversation-list" role="list"></ul>
+    </aside>
+    <div class="app">
+      <header>
+        <h1 id="chat-title">Assistant</h1>
+        <span>Enter 发送 · Shift+Enter 换行 · Markdown</span>
+      </header>
+      <div id="messages" aria-live="polite"></div>
+      <div class="composer">
+        <div class="composer-inner">
+          <textarea id="input" rows="1" placeholder="输入消息…" autocomplete="off"></textarea>
+          <button type="button" id="send">发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const STORAGE_KEY = "chatbot-conversations-v1";
+      const messagesEl = document.getElementById("messages");
+      const input = document.getElementById("input");
+      const sendBtn = document.getElementById("send");
+      const listEl = document.getElementById("conversation-list");
+      const newChatBtn = document.getElementById("new-chat");
+      const titleEl = document.getElementById("chat-title");
+
+      /** @typedef {{ id: string, title: string, messages: Array<{ role: string, text: string, meta?: string }> }} Conversation */
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return { conversations: [], activeId: null };
+          const data = JSON.parse(raw);
+          if (!data || !Array.isArray(data.conversations)) {
+            return { conversations: [], activeId: null };
+          }
+          return {
+            conversations: data.conversations,
+            activeId: data.activeId || null,
+          };
+        } catch {
+          return { conversations: [], activeId: null };
+        }
+      }
+
+      function saveState(state) {
+        try {
+          localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({
+              conversations: state.conversations,
+              activeId: state.activeId,
+            })
+          );
+        } catch (_) {}
+      }
+
+      let state = loadState();
+
+      function genId() {
+        if (typeof crypto !== "undefined" && crypto.randomUUID) {
+          return crypto.randomUUID();
+        }
+        return "c-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
+      }
+
+      function titleFromFirstMessage(text) {
+        const t = text.trim().replace(/\s+/g, " ");
+        if (!t) return "新对话";
+        return t.length > 36 ? t.slice(0, 36) + "…" : t;
+      }
+
+      function ensureConversation() {
+        if (state.conversations.length === 0) {
+          const id = genId();
+          state.conversations.push({ id, title: "新对话", messages: [] });
+          state.activeId = id;
+          saveState(state);
+        } else if (!state.activeId || !state.conversations.some((c) => c.id === state.activeId)) {
+          state.activeId = state.conversations[0].id;
+          saveState(state);
+        }
+      }
+
+      function getActive() {
+        ensureConversation();
+        return state.conversations.find((c) => c.id === state.activeId) || null;
+      }
+
+      function renderMarkdown(text) {
+        const raw = marked.parse(text, { breaks: true, gfm: true });
+        return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+      }
+
+      function scrollBottom() {
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function renderMessages() {
+        const conv = getActive();
+        messagesEl.innerHTML = "";
+        if (!conv) return;
+
+        titleEl.textContent = conv.title || "Assistant";
+
+        if (conv.messages.length === 0) {
+          const hint = document.createElement("div");
+          hint.className = "empty-hint";
+          hint.textContent = "在此对话中发送第一条消息，或从左侧选择其他对话。";
+          messagesEl.appendChild(hint);
+          return;
+        }
+
+        for (const m of conv.messages) {
+          if (m.role === "user") {
+            const div = document.createElement("div");
+            div.className = "msg user";
+            div.textContent = m.text;
+            messagesEl.appendChild(div);
+          } else if (m.role === "assistant") {
+            const div = document.createElement("div");
+            div.className = "msg assistant";
+            if (m.meta) {
+              const meta = document.createElement("div");
+              meta.className = "meta";
+              meta.textContent = m.meta;
+              div.appendChild(meta);
+            }
+            const inner = document.createElement("div");
+            inner.className = "md-content";
+            inner.innerHTML = renderMarkdown(m.text || "");
+            div.appendChild(inner);
+            messagesEl.appendChild(div);
+          } else if (m.role === "error") {
+            const div = document.createElement("div");
+            div.className = "msg assistant error";
+            div.textContent = m.text;
+            messagesEl.appendChild(div);
+          }
+        }
+        scrollBottom();
+      }
+
+      function renderList() {
+        listEl.innerHTML = "";
+        for (const c of state.conversations) {
+          const li = document.createElement("li");
+          li.className = "conv-item" + (c.id === state.activeId ? " active" : "");
+          li.dataset.id = c.id;
+          li.setAttribute("role", "button");
+          li.tabIndex = 0;
+
+          const span = document.createElement("span");
+          span.className = "title";
+          span.textContent = c.title || "新对话";
+          span.title = c.title || "新对话";
+
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "del";
+          del.setAttribute("aria-label", "删除对话");
+          del.textContent = "×";
+
+          li.appendChild(span);
+          li.appendChild(del);
+          listEl.appendChild(li);
+        }
+      }
+
+      function selectConversation(id) {
+        if (!state.conversations.some((c) => c.id === id)) return;
+        state.activeId = id;
+        saveState(state);
+        renderList();
+        renderMessages();
+        input.focus();
+      }
+
+      function newConversation() {
+        const id = genId();
+        state.conversations.unshift({ id, title: "新对话", messages: [] });
+        state.activeId = id;
+        saveState(state);
+        renderList();
+        renderMessages();
+        input.focus();
+      }
+
+      function deleteConversation(id, ev) {
+        if (ev) ev.stopPropagation();
+        state.conversations = state.conversations.filter((c) => c.id !== id);
+        if (state.activeId === id) {
+          state.activeId = state.conversations[0] ? state.conversations[0].id : null;
+        }
+        if (state.conversations.length === 0) {
+          const nid = genId();
+          state.conversations.push({ id: nid, title: "新对话", messages: [] });
+          state.activeId = nid;
+        }
+        saveState(state);
+        renderList();
+        renderMessages();
+      }
+
+      listEl.addEventListener("click", function (e) {
+        const delBtn = e.target.closest(".del");
+        const item = e.target.closest(".conv-item");
+        if (delBtn && item) {
+          deleteConversation(item.dataset.id, e);
+          return;
+        }
+        if (item && item.dataset.id) {
+          selectConversation(item.dataset.id);
+        }
+      });
+
+      listEl.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const item = e.target.closest(".conv-item");
+        if (!item || e.target.closest(".del")) return;
+        e.preventDefault();
+        selectConversation(item.dataset.id);
+      });
+
+      newChatBtn.addEventListener("click", newConversation);
+
+      function appendThinkingRow() {
+        const row = document.createElement("div");
+        row.className = "msg thinking";
+        row.id = "thinking-row";
+        row.innerHTML =
+          '<div class="thinking-inner"><span>思考中</span><span class="dots" aria-hidden="true"><span></span><span></span><span></span></span></div>';
+        const empty = messagesEl.querySelector(".empty-hint");
+        if (empty) empty.remove();
+        messagesEl.appendChild(row);
+        scrollBottom();
+        return row;
+      }
+
+      function removeThinking() {
+        const t = document.getElementById("thinking-row");
+        if (t) t.remove();
+      }
+
+      async function sendMessage() {
+        const conv = getActive();
+        if (!conv) return;
+
+        const text = input.value.trim();
+        if (!text) return;
+
+        input.value = "";
+        input.style.height = "auto";
+
+        if (conv.messages.length === 0) {
+          conv.title = titleFromFirstMessage(text);
+        }
+
+        conv.messages.push({ role: "user", text });
+        saveState(state);
+        renderList();
+        titleEl.textContent = conv.title;
+        renderMessages();
+
+        sendBtn.disabled = true;
+        appendThinkingRow();
+
+        try {
+          const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt: text }),
+          });
+          removeThinking();
+
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            const detail = data.detail;
+            const msg =
+              typeof detail === "string"
+                ? detail
+                : Array.isArray(detail)
+                  ? detail.map((d) => d.msg || d).join(" ")
+                  : res.statusText || "Request failed";
+            conv.messages.push({ role: "error", text: "Error: " + msg });
+            saveState(state);
+            renderMessages();
+            return;
+          }
+
+          const reply = data.message || "";
+          let meta = data.model ? "model: " + data.model : "";
+          if (data.used_search) {
+            meta += (meta ? " · " : "") + "web search";
+            if (data.search_query) meta += " · query: " + data.search_query;
+          }
+          conv.messages.push({ role: "assistant", text: reply, meta: meta || undefined });
+          saveState(state);
+          renderMessages();
+        } catch (e) {
+          removeThinking();
+          conv.messages.push({
+            role: "error",
+            text: "Network error: " + (e && e.message ? e.message : String(e)),
+          });
+          saveState(state);
+          renderMessages();
+        } finally {
+          sendBtn.disabled = false;
+          input.focus();
+        }
+      }
+
+      sendBtn.addEventListener("click", sendMessage);
+
+      input.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      input.addEventListener("input", function () {
+        input.style.height = "auto";
+        input.style.height = Math.min(input.scrollHeight, 200) + "px";
+      });
+
+      ensureConversation();
+      renderList();
+      renderMessages();
+      input.focus();
+    })();
+  </script>
+</body>
+</html>
